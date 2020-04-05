@@ -48,15 +48,7 @@ public class ItemLasso extends Item {
 	public boolean itemInteractionForEntity(ItemStack stack, EntityPlayer player, EntityLivingBase target, EnumHand hand) {
 		if (NBTHelper.hasMob(stack) || target.isDead || !(target instanceof EntityLiving)) return false;
 		
-		NBTTagCompound nbt = NBTHelper.getBaseTag(stack);
-		
-		// Cannot capture boss.
-		if (!target.isNonBoss()) {
-			if (!player.world.isRemote) {
-				Msg.tellPlayer(player, "tinymobfarm.error.cannot_capture_boss");
-			}
-			return true;
-		}
+		NBTTagCompound nbt = NBTHelper.getBaseTag(stack)
 		
 		// Blacklist.
 		if (EntityHelper.isMobBlacklisted((EntityLiving) target)) {
