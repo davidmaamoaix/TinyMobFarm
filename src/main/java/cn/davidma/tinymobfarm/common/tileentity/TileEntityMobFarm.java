@@ -5,17 +5,22 @@ import java.util.List;
 import javax.annotation.Nullable;
 
 import cn.davidma.tinymobfarm.common.block.BlockMobFarm;
+import cn.davidma.tinymobfarm.core.ConfigTinyMobFarm;
 import cn.davidma.tinymobfarm.core.EnumMobFarm;
 import cn.davidma.tinymobfarm.core.Reference;
 import cn.davidma.tinymobfarm.core.util.EntityHelper;
 import cn.davidma.tinymobfarm.core.util.FakePlayerHelper;
 import cn.davidma.tinymobfarm.core.util.NBTHelper;
 
+import com.sun.javafx.scene.traversal.Direction;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityList;
 import net.minecraft.entity.EntityLiving;
 import net.minecraft.entity.item.EntityItem;
+import net.minecraft.init.Blocks;
+import net.minecraft.inventory.ISidedInventory;
+import net.minecraft.inventory.InventoryHelper;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.NetworkManager;
@@ -24,12 +29,17 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.ITickable;
 import net.minecraft.util.ResourceLocation;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
+import net.minecraftforge.common.capabilities.ICapabilityProvider;
 import net.minecraftforge.common.util.FakePlayer;
 import net.minecraftforge.items.CapabilityItemHandler;
 import net.minecraftforge.items.IItemHandler;
 import net.minecraftforge.items.ItemHandlerHelper;
 import net.minecraftforge.items.ItemStackHandler;
+import net.minecraftforge.items.wrapper.EmptyHandler;
+import net.minecraftforge.items.wrapper.SidedInvWrapper;
 
 public class TileEntityMobFarm extends TileEntity implements ITickable {
 	
@@ -49,17 +59,39 @@ public class TileEntityMobFarm extends TileEntity implements ITickable {
 			this.shouldUpdate = false;
 		}
 		if (this.isWorking()) {
-			this.currProgress++;
-			if (!this.world.isRemote && this.mobFarmData != null) {
-				if (this.currProgress >= this.mobFarmData.getMaxProgress()) {
+			if (!(ConfigTinyMobFarm.CHEST_SPACE_CHECK)) {
+				this.currProgress++;
+				if (!this.world.isRemote && this.mobFarmData != null) {
+					if (this.currProgress >= this.mobFarmData.getMaxProgress()) {
+						this.currProgress = 0;
+
+						this.generateDrops();
+
+						FakePlayer daniel = FakePlayerHelper.getPlayer((WorldServer) world);
+						this.getLasso().damageItem(this.mobFarmData.getRandomDamage(this.world.rand), daniel);
+
+						this.saveAndSync();
+					}
+				}
+			}
+			if (ConfigTinyMobFarm.CHEST_SPACE_CHECK) {
+				final IItemHandler inventory = getInv(this.world, this.pos.down(1));
+				if (inventory == null) {
 					this.currProgress = 0;
-					
-					this.generateDrops();
-					
-					FakePlayer daniel = FakePlayerHelper.getPlayer((WorldServer) world);
-					this.getLasso().damageItem(this.mobFarmData.getRandomDamage(this.world.rand), daniel);
-					
-					this.saveAndSync();
+				}else if (inventory != null) {
+					this.currProgress++;
+					if (!this.world.isRemote && this.mobFarmData != null) {
+						if (this.currProgress >= this.mobFarmData.getMaxProgress()) {
+							this.currProgress = 0;
+
+							this.generateDrops();
+
+							FakePlayer daniel = FakePlayerHelper.getPlayer((WorldServer) world);
+							this.getLasso().damageItem(this.mobFarmData.getRandomDamage(this.world.rand), daniel);
+
+							this.saveAndSync();
+						}
+					}
 				}
 			}
 		} else {
@@ -71,7 +103,7 @@ public class TileEntityMobFarm extends TileEntity implements ITickable {
 		ItemStack lasso = this.getLasso();
 		String lootTableLocation = NBTHelper.getBaseTag(lasso).getString(NBTHelper.MOB_LOOTTABLE_LOCATION);
 		if (lootTableLocation.isEmpty()) return;
-		
+
 		List<ItemStack> drops = EntityHelper.generateLoot(new ResourceLocation(lootTableLocation), this.world);
 		for (EnumFacing facing: EnumFacing.values()) {
 			TileEntity tileEntity = this.world.getTileEntity(this.pos.offset(facing));
@@ -97,6 +129,19 @@ public class TileEntityMobFarm extends TileEntity implements ITickable {
 			this.world.spawnEntity(entityItem);
 		}
 		
+	}
+
+	// Check each side of the MobFarm for Item Handler capability
+	private IItemHandler getInv(World world, BlockPos pos){
+		for (EnumFacing facing: EnumFacing.VALUES) {
+			final TileEntity mobFarm = this.world.getTileEntity(this.pos.offset(facing));
+			if (mobFarm != null) {
+				final IItemHandler invCap = mobFarm.getCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, facing);
+				if (invCap == null) return EmptyHandler.INSTANCE;
+				return invCap;
+			}
+		}
+		return null;
 	}
 	
 	private void updateModel() {
